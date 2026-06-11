@@ -1,0 +1,145 @@
+version: '3.9'
+
+services:
+  # ─── Infrastructure ────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: jobflux-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: jobplatform
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d jobplatform']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - jobflux-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: jobflux-redis
+    restart: unless-stopped
+    command: redis-server --save 20 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - jobflux-net
+
+  # ─── API Server ────────────────────────────────────────────────────
+  api-server:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: jobflux-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://postgres:password@postgres:5432/jobplatform
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      CORS_ORIGIN: http://localhost:3000
+      LOG_LEVEL: info
+    ports:
+      - '3001:3001'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3001/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - jobflux-net
+
+  # ─── Worker ────────────────────────────────────────────────────────
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: jobflux-worker-1
+    restart: unless-stopped
+    depends_on:
+      api-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_URL: http://api-server:3001
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      WORKER_NAME: worker-docker-alpha
+      LOG_LEVEL: info
+    networks:
+      - jobflux-net
+
+  worker-2:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: jobflux-worker-2
+    restart: unless-stopped
+    depends_on:
+      api-server:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_URL: http://api-server:3001
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      WORKER_NAME: worker-docker-beta
+      LOG_LEVEL: info
+    networks:
+      - jobflux-net
+
+  # ─── Web Dashboard ─────────────────────────────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: jobflux-web
+    restart: unless-stopped
+    depends_on:
+      api-server:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+    ports:
+      - '3000:3000'
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -f http://localhost:3000 || exit 1']
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - jobflux-net
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  jobflux-net:
+    driver: bridge

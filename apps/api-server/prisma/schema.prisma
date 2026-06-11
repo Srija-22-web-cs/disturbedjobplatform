@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum WorkerStatus {
+  ONLINE
+  OFFLINE
+}
+
+enum JobStatus {
+  QUEUED
+  ASSIGNED
+  RUNNING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+model Worker {
+  id             String       @id @default(uuid())
+  name           String       @unique
+  status         WorkerStatus @default(ONLINE)
+  lastHeartbeat  DateTime     @default(now())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  jobs           Job[]
+  executionHistory ExecutionHistory[]
+
+  @@index([status])
+  @@index([lastHeartbeat])
+  @@map("workers")
+}
+
+model Job {
+  id               String    @id @default(uuid())
+  type             String
+  payload          Json      @default("{}")
+  priority         Int       @default(2)
+  status           JobStatus @default(QUEUED)
+  assignedWorkerId String?
+  assignedWorker   Worker?   @relation(fields: [assignedWorkerId], references: [id], onDelete: SetNull)
+  retryCount       Int       @default(0)
+  maxRetries       Int       @default(3)
+  progress         Int       @default(0)
+  result           Json?
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  executionHistory ExecutionHistory[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([assignedWorkerId])
+  @@index([createdAt])
+  @@index([status, priority])
+  @@map("jobs")
+}
+
+model ExecutionHistory {
+  id          String    @id @default(uuid())
+  jobId       String
+  job         Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  workerId    String?
+  worker      Worker?   @relation(fields: [workerId], references: [id], onDelete: SetNull)
+  status      JobStatus
+  logs        String[]  @default([])
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([jobId])
+  @@index([workerId])
+  @@index([startedAt])
+  @@map("execution_history")
+}

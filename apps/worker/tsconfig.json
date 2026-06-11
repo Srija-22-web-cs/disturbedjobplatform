@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "lib": [
+      "ES2020"
+    ],
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "paths": {
+      "@distributed-job-platform/shared-types": [
+        "../../packages/shared-types/src/index.ts"
+      ],
+      "@distributed-job-platform/shared-utils": [
+        "../../packages/shared-utils/src/index.ts"
+      ]
+    },
+    "rootDirs": [
+      "./src",
+      "../../packages/shared-types/src",
+      "../../packages/shared-utils/src"
+    ]
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

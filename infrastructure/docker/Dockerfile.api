@@ -1,0 +1,43 @@
+FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat curl
+WORKDIR /app
+
+# Install deps
+FROM base AS deps
+COPY package.json ./
+COPY apps/api-server/package.json ./apps/api-server/
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY packages/shared-utils/package.json ./packages/shared-utils/
+RUN npm install --workspaces --include-workspace-root
+
+# Build
+FROM deps AS builder
+COPY packages/ ./packages/
+COPY apps/api-server/ ./apps/api-server/
+
+RUN npm run build -w packages/shared-types
+RUN npm run build -w packages/shared-utils
+RUN npm run build -w apps/api-server
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared-types/dist ./packages/shared-types/dist
+COPY --from=builder /app/packages/shared-types/package.json ./packages/shared-types/package.json
+COPY --from=builder /app/packages/shared-utils/dist ./packages/shared-utils/dist
+COPY --from=builder /app/packages/shared-utils/package.json ./packages/shared-utils/package.json
+COPY --from=builder /app/apps/api-server/dist ./apps/api-server/dist
+COPY --from=builder /app/apps/api-server/package.json ./apps/api-server/package.json
+COPY --from=builder /app/apps/api-server/node_modules ./apps/api-server/node_modules
+COPY --from=builder /app/apps/api-server/prisma ./apps/api-server/prisma
+
+WORKDIR /app/apps/api-server
+
+# Generate Prisma client and run migrations on start
+COPY infrastructure/scripts/start-api.sh /start-api.sh
+RUN chmod +x /start-api.sh
+
+EXPOSE 3001
+CMD ["/start-api.sh"]
